@@ -56,7 +56,7 @@
 /**
  * Flutter plugin providing access to the Google Mobile Ads API.
  */
-@interface FLTGoogleMobileAdsPlugin : NSObject <FlutterPlugin>
+@interface FLTGoogleMobileAdsPlugin : NSObject <FlutterPlugin, FlutterSceneLifeCycleDelegate>
 
 /**
  * Registers a FLTMediationNetworkExtrasProvider used to provide mediation

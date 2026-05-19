@@ -17,11 +17,12 @@
 #import "FLTAppStateNotifier.h"
 #import "FLTConstants.h"
 #import "FLTNSString.h"
-#import "UserMessagingPlatform/FLTUserMessagingPlatformManager.h"
+#import "FLTUserMessagingPlatformManager.h"
 @import webview_flutter_wkwebview;
 
 @interface FLTGoogleMobileAdsPlugin ()
 @property(nonatomic, retain) FlutterMethodChannel *channel;
+@property NSObject<FlutterPluginRegistrar> *registrar;
 @property NSMutableDictionary<NSString *, id<FLTNativeAdFactory>>
     *nativeAdFactories;
 @property NSMutableDictionary<NSString *, id<FLTCustomAdFactory>>
@@ -79,7 +80,7 @@
 
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
   FLTGoogleMobileAdsPlugin *instance = [[FLTGoogleMobileAdsPlugin alloc]
-      initWithBinaryMessenger:registrar.messenger];
+                                        initWithRegistrar:registrar binaryMessenger:registrar.messenger];
   [registrar publish:instance];
 
   FLTGoogleMobileAdsReaderWriter *readerWriter =
@@ -115,10 +116,11 @@
   return YES;
 }
 
-- (instancetype)initWithBinaryMessenger:
-    (id<FlutterBinaryMessenger>)binaryMessenger {
+- (instancetype)initWithRegistrar: (NSObject<FlutterPluginRegistrar>*)registrar
+                  binaryMessenger: (id<FlutterBinaryMessenger>)binaryMessenger {
   self = [self init];
   if (self) {
+      _registrar = registrar;
     _nativeAdFactories = [NSMutableDictionary dictionary];
     _customAdFactories = [NSMutableDictionary dictionary];
     _manager =
@@ -256,8 +258,7 @@
 }
 
 - (UIViewController *)rootController {
-  UIViewController *root =
-      UIApplication.sharedApplication.delegate.window.rootViewController;
+    UIViewController* root = _registrar.viewController;
   if ([FLTAdUtil isNull:root]) {
 // UIApplication.sharedApplication.delegate.window is not guaranteed to be
 // set. Use the keyWindow in this case.
@@ -340,7 +341,7 @@
                              if (error) {
                                result([FlutterError
                                    errorWithCode:[[NSString alloc]
-                                                     initWithInt:error.code]
+                                                     gma_initWithInt:error.code]
                                          message:error.localizedDescription
                                          details:error.domain]);
                              } else {
@@ -354,10 +355,16 @@
                  isEqualToString:@"MobileAds#getRequestConfiguration"]) {
     result(GADMobileAds.sharedInstance.requestConfiguration);
   } else if ([call.method isEqualToString:@"MobileAds#registerWebView"]) {
-    if (!_appDelegate) {
+    UIViewController* viewController = _registrar.viewController;
+    NSNumber *webViewId = call.arguments[@"webViewId"];
+    if ([viewController isKindOfClass:FlutterViewController.class]) {
+      FlutterEngine* engine = ((FlutterViewController*)viewController).engine;
+      WKWebView *webView = [FLTAdUtil getWebView:webViewId
+                                   flutterPluginRegistry:engine];
+      [GADMobileAds.sharedInstance registerWebView:webView];
+    } else if (!_appDelegate) {
       NSLog(@"App delegate is null in MobileAds#registerWebView, skipping");
     } else {
-      NSNumber *webViewId = call.arguments[@"webViewId"];
       WKWebView *webView = [FLTAdUtil getWebView:webViewId
                            flutterPluginRegistry:_appDelegate];
       [GADMobileAds.sharedInstance registerWebView:webView];
@@ -614,7 +621,19 @@
     FLTAnchoredAdaptiveBannerSize *size = [[FLTAnchoredAdaptiveBannerSize alloc]
         initWithFactory:[[FLTAdSizeFactory alloc] init]
             orientation:call.arguments[@"orientation"]
-                  width:call.arguments[@"width"]];
+                  width:call.arguments[@"width"]
+                isLarge:false];
+    if (IsGADAdSizeValid(size.size)) {
+      result(size.height);
+    } else {
+      result(nil);
+    }
+  } else if ([call.method isEqualToString:@"AdSize#getLargeAnchoredAdaptiveBannerAdSize"]) {
+    FLTAnchoredAdaptiveBannerSize *size = [[FLTAnchoredAdaptiveBannerSize alloc]
+        initWithFactory:[[FLTAdSizeFactory alloc] init]
+            orientation:call.arguments[@"orientation"]
+                  width:call.arguments[@"width"]
+                isLarge:true];
     if (IsGADAdSizeValid(size.size)) {
       result(size.height);
     } else {
@@ -660,6 +679,18 @@
     } else {
       result(FlutterMethodNotImplemented);
     }
+  } else if ([call.method isEqualToString:@"isCollapsible"]) {
+      id<FLTAd> ad = [_manager adFor:call.arguments[@"adId"]];
+      if ([FLTAdUtil isNull:ad]) {
+        // Called on an ad that hasn't been loaded yet.
+        result(@NO);
+      }
+      if ([ad isKindOfClass:[FLTBannerAd class]]) {
+        FLTBannerAd *bannerAd = (FLTBannerAd *)ad;
+        result(@([bannerAd isCollapsible]));
+      } else {
+        result(FlutterMethodNotImplemented);
+      }
   } else if ([call.method
                  isEqualToString:@"setServerSideVerificationOptions"]) {
     id<FLTAd> ad = [_manager adFor:call.arguments[@"adId"]];
