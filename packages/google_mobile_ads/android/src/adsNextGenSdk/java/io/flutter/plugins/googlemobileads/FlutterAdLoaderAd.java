@@ -234,7 +234,14 @@ class FlutterAdLoaderAd extends FlutterAd implements FlutterAdLoadedListener, Na
 
   @Nullable
   FlutterAdSize getAdSize() {
-    return null;
+    if (!(view instanceof AdView)) {
+      return null;
+    }
+    final BannerAd bannerAd = ((AdView) view).getBannerAd();
+    if (bannerAd == null) {
+      return null;
+    }
+    return new FlutterAdSize(bannerAd.getAdSize());
   }
 
   @Nullable
